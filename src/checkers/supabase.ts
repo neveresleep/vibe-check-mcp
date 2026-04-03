@@ -145,6 +145,44 @@ export async function checkSupabase(files: FileEntry[]): Promise<Finding[]> {
     }
   }
 
+  // Detect createClient with hardcoded key (not from env)
+  for (const file of files) {
+    const createClientRegex = /createClient\s*\(\s*["']https?:\/\/[^"']+["']\s*,\s*["']eyJ[A-Za-z0-9_-]+/g;
+    let match;
+    while ((match = createClientRegex.exec(file.content)) !== null) {
+      findings.push({
+        id: makeId("supabase"),
+        checker: "supabase",
+        severity: "CRITICAL",
+        title: "Supabase createClient с hardcoded key",
+        description: "URL и ключ Supabase захардкожены напрямую в createClient(). Если это service role key — любой пользователь получает полный доступ к БД.",
+        fix: "createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!). Ключи — только из env.",
+        file: file.path,
+        line: lineNumber(file.content, match.index),
+        snippet: snippetAt(file.content, match.index),
+      });
+    }
+  }
+
+  // Detect .select('*') on sensitive tables in client code (Escape: 175 PII exposures)
+  for (const file of clientFiles) {
+    const selectAllRegex = /\.from\s*\(\s*["'](?:users|profiles|customers|accounts|patients)["']\s*\)\s*\.select\s*\(\s*["']\*?["']?\s*\)/g;
+    let match;
+    while ((match = selectAllRegex.exec(file.content)) !== null) {
+      findings.push({
+        id: makeId("supabase"),
+        checker: "supabase",
+        severity: "HIGH",
+        title: "Supabase select() на таблице с PII",
+        description: "Запрос к таблице пользователей на клиенте. Без корректных RLS политик все данные всех пользователей (email, телефон, пароли) доступны любому.",
+        fix: "1. Убедиться что RLS включён. 2. Добавить политику с auth.uid(). 3. Указать конкретные поля вместо select('*').",
+        file: file.path,
+        line: lineNumber(file.content, match.index),
+        snippet: snippetAt(file.content, match.index),
+      });
+    }
+  }
+
   // Detect supabase.from().select/insert/update/delete without .eq('user_id', ...) in non-server files
   for (const file of clientFiles) {
     // .from('table').delete() without user filter — very dangerous

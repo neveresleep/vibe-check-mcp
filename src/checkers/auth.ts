@@ -114,6 +114,46 @@ const PATTERNS: AuthPattern[] = [
     description: "Webhook эндпоинт без проверки подписи принимает любые POST-запросы. Атакующий может имитировать события.",
     fix: "Проверять подпись: stripe.webhooks.constructEvent(body, sig, secret).",
   },
+  // BOLA — findById without user filter (Escape: 12 confirmed)
+  {
+    name: "BOLA: доступ к объекту без проверки владельца",
+    regex: /\.find(?:ById|One)\s*\(\s*(?:req\.params|req\.query)/i,
+    severity: "HIGH",
+    description: "Поиск записи по ID из запроса без проверки что она принадлежит текущему пользователю. Атакующий перебирает ID и читает чужие данные (BOLA).",
+    fix: "Добавить фильтр по userId: Model.findOne({ _id: req.params.id, userId: req.user.id })",
+  },
+  // Plaintext password storage
+  {
+    name: "Пароль сохраняется без хеширования",
+    regex: /(?:password|passwd)\s*:\s*req\.body\.(?:password|passwd)/i,
+    severity: "CRITICAL",
+    description: "Пароль записывается в БД напрямую из запроса без хеширования. При утечке БД все пароли доступны открытым текстом.",
+    fix: "const hash = await bcrypt.hash(req.body.password, 12); затем сохранять hash.",
+  },
+  // PII exposure via SELECT * / returning full user object (Escape: 175 instances)
+  {
+    name: "PII exposure: полный объект пользователя в ответе",
+    regex: /res\.(?:json|send)\s*\(\s*(?:user|users|profile|customer)/i,
+    severity: "HIGH",
+    description: "Возврат полного объекта пользователя в API ответе может раскрыть PII: email, телефон, password_hash, адрес, IBAN.",
+    fix: "Возвращать только нужные поля: res.json({ id: user.id, name: user.name }). Никогда не возвращать password, hash, internal fields.",
+  },
+  // SELECT * (PII over-exposure)
+  {
+    name: "SELECT * возвращает все поля включая приватные",
+    regex: /(?:SELECT\s+\*\s+FROM\s+(?:users|customers|profiles|accounts))|\.from\s*\(\s*["'](?:users|customers|profiles|accounts)["']\s*\)\s*\.select\s*\(\s*["']\*["']\)/i,
+    severity: "HIGH",
+    description: "SELECT * из таблицы пользователей возвращает все поля: пароли, email, телефоны, финансовые данные. Escape нашёл 175 случаев утечки PII.",
+    fix: "Явно указывать нужные поля: SELECT id, name, avatar FROM users. Или .select('id, name, avatar').",
+  },
+  // Public state-altering endpoints without auth (Escape: 400+ instances)
+  {
+    name: "POST/PUT/DELETE эндпоинт потенциально без auth",
+    regex: /(?:router|app)\.(?:post|put|delete)\s*\(\s*["']\/api\/(?!auth|login|register|signup|webhook)/i,
+    severity: "MEDIUM",
+    description: "State-altering API эндпоинт. Убедись что есть auth middleware — Escape нашёл 400+ открытых POST/PUT/DELETE эндпоинтов в vibe-coded приложениях.",
+    fix: "Добавить auth middleware: app.post('/api/data', authMiddleware, handler). Проверять req.user.",
+  },
 ];
 
 export async function checkAuth(files: FileEntry[]): Promise<Finding[]> {

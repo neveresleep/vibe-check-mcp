@@ -128,6 +128,22 @@ const CODE_PATTERNS: ConfigPattern[] = [
     description: "JWT с долгим сроком жизни (дни, годы) — украденный токен работает очень долго, нет способа его отозвать.",
     fix: "Access token: 15-60 минут. Refresh token: 7-30 дней, хранить в БД.",
   },
+  // Escape finding: 601 stack traces exposed — Next.js default error page in production
+  {
+    name: "Next.js detailed error в продакшне",
+    regex: /(?:getServerSideProps|getStaticProps|Server\s*Components?).*(?:throw|error)/i,
+    severity: "MEDIUM",
+    description: "Ошибки в server-side коде Next.js могут раскрыть stack trace в production. Escape нашёл 601 случай exposed stack traces.",
+    fix: "Добавить custom error page (pages/_error.tsx). Не пробрасывать внутренние ошибки клиенту.",
+  },
+  // .env.example with real values
+  {
+    name: "Реальные значения в .env.example",
+    regex: /\.env\.example/,
+    severity: "LOW",
+    description: "Проверь .env.example на реальные ключи — часто AI копирует настоящие значения вместо placeholder-ов.",
+    fix: "В .env.example только placeholder-ы: API_KEY=your_api_key_here",
+  },
 ];
 
 async function fileExists(path: string): Promise<boolean> {

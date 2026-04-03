@@ -75,6 +75,41 @@ const PATTERNS: SecretPattern[] = [
     severity: "LOW",
     fix: "pk_live_ можно на фронтенде — это нормально. Убедись что sk_live_ скрыт.",
   },
+  // Twilio Auth Token
+  {
+    name: "Twilio Auth Token",
+    regex: /(?:TWILIO_AUTH_TOKEN|twilio.*auth.*token)\s*[=:]\s*["']([a-f0-9]{32})["']/i,
+    severity: "CRITICAL",
+    fix: "Ротировать в Twilio Console. Хранить в env var TWILIO_AUTH_TOKEN.",
+  },
+  // Firebase service account key
+  {
+    name: "Firebase service account key",
+    regex: /"type"\s*:\s*"service_account".*"private_key"/s,
+    severity: "CRITICAL",
+    fix: "Удалить из кода. Использовать GOOGLE_APPLICATION_CREDENTIALS env var.",
+  },
+  // Slack token
+  {
+    name: "Slack Bot/User Token",
+    regex: /xox[bporas]-[A-Za-z0-9-]{10,}/,
+    severity: "CRITICAL",
+    fix: "Ротировать в Slack App settings. Хранить в env.",
+  },
+  // Mailgun API key
+  {
+    name: "Mailgun API key",
+    regex: /key-[A-Za-z0-9]{32}/,
+    severity: "HIGH",
+    fix: "Ротировать в Mailgun Dashboard. Хранить в env.",
+  },
+  // NEXT_PUBLIC_ with sensitive env (Escape finding: secrets in frontend bundles)
+  {
+    name: "Секретный ключ в NEXT_PUBLIC_ переменной",
+    regex: /NEXT_PUBLIC_(?:SUPABASE_SERVICE_ROLE|.*SECRET|.*PRIVATE|.*PASSWORD|.*API_KEY)\s*[=:]/i,
+    severity: "CRITICAL",
+    fix: "NEXT_PUBLIC_ переменные попадают в клиентский бандл. Убрать NEXT_PUBLIC_ префикс и использовать только на сервере (API routes).",
+  },
 ];
 
 export async function checkSecrets(files: FileEntry[]): Promise<Finding[]> {
