@@ -14,6 +14,8 @@ import { checkInjections } from "./checkers/injections.js";
 import { checkHeaders } from "./checkers/headers.js";
 import { checkDependencies } from "./checkers/dependencies.js";
 import { checkSupabase } from "./checkers/supabase.js";
+import { checkCicd } from "./checkers/cicd.js";
+import { checkAgent } from "./checkers/agent.js";
 
 const CHECKER_MAP: Record<string, (files: FileEntry[], projectPath?: string) => Promise<Finding[]>> = {
   secrets: (files) => checkSecrets(files),
@@ -22,6 +24,8 @@ const CHECKER_MAP: Record<string, (files: FileEntry[], projectPath?: string) => 
   injections: (files) => checkInjections(files),
   headers: (files) => checkHeaders(files),
   supabase: (files) => checkSupabase(files),
+  cicd: (files) => checkCicd(files),
+  agent: (files) => checkAgent(files),
 };
 
 const ALL_CHECKERS = Object.keys(CHECKER_MAP);
@@ -96,7 +100,7 @@ server.tool(
     checkers: z
       .array(z.string())
       .optional()
-      .describe("Какие checkers запускать: secrets, auth, config, injections, headers, supabase, dependencies"),
+      .describe("Какие checkers запускать: secrets, auth, config, injections, headers, supabase, cicd, agent, dependencies"),
   },
   async ({ path, severity, checkers }) => {
     const activeCheckers = checkers?.length
