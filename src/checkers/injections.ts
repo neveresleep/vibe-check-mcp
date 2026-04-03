@@ -47,6 +47,30 @@ const PATTERNS: InjectionPattern[] = [
     description: "Редирект по URL от пользователя позволяет перенаправить жертву на фишинговый сайт.",
     fix: "Whitelist допустимых URL для редиректа.",
   },
+  // Template injection (backtick with user input)
+  {
+    name: "SQL template literal injection",
+    regex: /\.query\s*\(\s*`[^`]*\$\{/i,
+    severity: "CRITICAL",
+    description: "Использование template literals в SQL запросах — та же SQL injection, только через backticks.",
+    fix: "Использовать параметризованные запросы: db.query('SELECT ... WHERE id = $1', [id])",
+  },
+  // #20 Exposed .git
+  {
+    name: ".git доступен через web server",
+    regex: /express\.static\s*\(\s*["']\.["']\s*\)|serveStatic\s*\(\s*["']\.["']/i,
+    severity: "CRITICAL",
+    description: "express.static('.') раздаёт все файлы включая .git — атакующий скачивает исходный код с историей.",
+    fix: "Указывать конкретную папку: express.static('public'). Никогда не раздавать корень проекта.",
+  },
+  // dangerouslySetInnerHTML React
+  {
+    name: "dangerouslySetInnerHTML с user data",
+    regex: /dangerouslySetInnerHTML\s*=\s*\{\s*\{\s*__html\s*:/,
+    severity: "HIGH",
+    description: "dangerouslySetInnerHTML в React вставляет HTML без санитизации. Если данные от пользователя — XSS.",
+    fix: "Использовать DOMPurify.sanitize() перед вставкой: dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(data) }}",
+  },
 ];
 
 export async function checkInjections(files: FileEntry[]): Promise<Finding[]> {
@@ -57,20 +81,21 @@ export async function checkInjections(files: FileEntry[]): Promise<Finding[]> {
     if (isTestFile(file.path)) continue;
 
     for (const pattern of PATTERNS) {
-      const match = pattern.regex.exec(file.content);
-      if (!match) continue;
-
-      findings.push({
-        id: makeId("injections"),
-        checker: "injections",
-        severity: pattern.severity,
-        title: pattern.name,
-        description: pattern.description,
-        fix: pattern.fix,
-        file: file.path,
-        line: lineNumber(file.content, match.index),
-        snippet: snippetAt(file.content, match.index),
-      });
+      const globalRegex = new RegExp(pattern.regex.source, pattern.regex.flags.includes("g") ? pattern.regex.flags : pattern.regex.flags + "g");
+      let match;
+      while ((match = globalRegex.exec(file.content)) !== null) {
+        findings.push({
+          id: makeId("injections"),
+          checker: "injections",
+          severity: pattern.severity,
+          title: pattern.name,
+          description: pattern.description,
+          fix: pattern.fix,
+          file: file.path,
+          line: lineNumber(file.content, match.index),
+          snippet: snippetAt(file.content, match.index),
+        });
+      }
     }
   }
 

@@ -43,11 +43,11 @@ export async function checkHeaders(files: FileEntry[]): Promise<Finding[]> {
     }
   }
 
-  // CORS with credentials + wildcard
   for (const file of files) {
-    const regex = /credentials.*true.*origin.*\*|origin.*\*.*credentials.*true/is;
-    const match = regex.exec(file.content);
-    if (match) {
+    // CORS with credentials + wildcard
+    const corsRegex = /credentials.*true.*origin.*\*|origin.*\*.*credentials.*true/gis;
+    let match;
+    while ((match = corsRegex.exec(file.content)) !== null) {
       findings.push({
         id: makeId("headers"),
         checker: "headers",
@@ -58,6 +58,57 @@ export async function checkHeaders(files: FileEntry[]): Promise<Finding[]> {
         file: file.path,
         line: lineNumber(file.content, match.index),
         snippet: snippetAt(file.content, match.index),
+      });
+    }
+
+    // #57 Weak CSP with unsafe-inline/unsafe-eval
+    const cspRegex = /Content-Security-Policy.*(?:unsafe-inline|unsafe-eval)/gi;
+    while ((match = cspRegex.exec(file.content)) !== null) {
+      findings.push({
+        id: makeId("headers"),
+        checker: "headers",
+        severity: "MEDIUM",
+        title: "Слабая Content-Security-Policy",
+        description: "CSP с unsafe-inline или unsafe-eval фактически не защищает от XSS.",
+        fix: "Убрать unsafe-inline, использовать nonces или hashes для inline скриптов.",
+        file: file.path,
+        line: lineNumber(file.content, match.index),
+        snippet: snippetAt(file.content, match.index),
+      });
+    }
+
+    // #66 Missing SRI on external scripts
+    const sriRegex = /<script\s+src=["']https?:\/\/[^"']+["'][^>]*>/gi;
+    while ((match = sriRegex.exec(file.content)) !== null) {
+      if (!/integrity=/.test(match[0])) {
+        findings.push({
+          id: makeId("headers"),
+          checker: "headers",
+          severity: "MEDIUM",
+          title: "Внешний скрипт без Subresource Integrity",
+          description: "Внешний скрипт без integrity hash — если CDN взломан, вредоносный скрипт загрузится всем пользователям.",
+          fix: 'Добавить integrity="sha384-..." атрибут для внешних скриптов.',
+          file: file.path,
+          line: lineNumber(file.content, match.index),
+          snippet: snippetAt(file.content, match.index),
+        });
+      }
+    }
+
+    // #89 Version disclosure
+    const versionRegex = /X-Powered-By/i;
+    const versionMatch = versionRegex.exec(file.content);
+    if (versionMatch && !/disable.*x-powered-by|removeHeader.*X-Powered-By/i.test(file.content)) {
+      findings.push({
+        id: makeId("headers"),
+        checker: "headers",
+        severity: "LOW",
+        title: "Version disclosure через X-Powered-By",
+        description: "X-Powered-By раскрывает фреймворк и версию. Помогает атакующим искать CVE.",
+        fix: "app.disable('x-powered-by') в Express. Или использовать helmet().",
+        file: file.path,
+        line: lineNumber(file.content, versionMatch.index),
+        snippet: snippetAt(file.content, versionMatch.index),
       });
     }
   }

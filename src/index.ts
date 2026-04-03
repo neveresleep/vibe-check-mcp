@@ -13,6 +13,7 @@ import { checkConfig } from "./checkers/config.js";
 import { checkInjections } from "./checkers/injections.js";
 import { checkHeaders } from "./checkers/headers.js";
 import { checkDependencies } from "./checkers/dependencies.js";
+import { checkSupabase } from "./checkers/supabase.js";
 
 const CHECKER_MAP: Record<string, (files: FileEntry[], projectPath?: string) => Promise<Finding[]>> = {
   secrets: (files) => checkSecrets(files),
@@ -20,6 +21,7 @@ const CHECKER_MAP: Record<string, (files: FileEntry[], projectPath?: string) => 
   config: (files, path) => checkConfig(files, path),
   injections: (files) => checkInjections(files),
   headers: (files) => checkHeaders(files),
+  supabase: (files) => checkSupabase(files),
 };
 
 const ALL_CHECKERS = Object.keys(CHECKER_MAP);
@@ -57,7 +59,7 @@ async function runScan(
   // Deduplicate by file + title
   const seen = new Set<string>();
   findings = findings.filter((f) => {
-    const key = `${f.file}:${f.title}`;
+    const key = `${f.file}:${f.title}:${f.line}`;
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
@@ -94,7 +96,7 @@ server.tool(
     checkers: z
       .array(z.string())
       .optional()
-      .describe("Какие checkers запускать: secrets, auth, config, injections, headers, dependencies"),
+      .describe("Какие checkers запускать: secrets, auth, config, injections, headers, supabase, dependencies"),
   },
   async ({ path, severity, checkers }) => {
     const activeCheckers = checkers?.length
@@ -138,7 +140,7 @@ server.tool(
     // Deduplicate
     const seen = new Set<string>();
     findings = findings.filter((f) => {
-      const key = `${f.file}:${f.title}`;
+      const key = `${f.file}:${f.title}:${f.line}`;
       if (seen.has(key)) return false;
       seen.add(key);
       return true;

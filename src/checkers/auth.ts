@@ -82,6 +82,38 @@ const PATTERNS: AuthPattern[] = [
     description: "Cookie без httpOnly доступна JavaScript-у, что позволяет красть сессии через XSS.",
     fix: "res.cookie('name', value, { httpOnly: true, secure: true, sameSite: 'strict' })",
   },
+  // #16 yaml.load without SafeLoader
+  {
+    name: "Insecure YAML deserialization",
+    regex: /yaml\.load\s*\([^)]*\)(?!.*SafeLoader|.*safe_load)/i,
+    severity: "CRITICAL",
+    description: "yaml.load() без SafeLoader позволяет выполнить произвольный код при десериализации.",
+    fix: "yaml.safe_load() в Python или yaml.load(data, Loader=yaml.SafeLoader).",
+  },
+  // #18 Unrestricted file upload
+  {
+    name: "Upload без проверки типа файла",
+    regex: /multer\s*\(\s*\{[^}]*\}\s*\)(?!.*fileFilter)/i,
+    severity: "CRITICAL",
+    description: "Upload файлов без фильтра типов — атакующий может загрузить .php, .js или .sh и выполнить на сервере.",
+    fix: "Добавить fileFilter в multer, проверять MIME type и расширение. Хранить вне webroot.",
+  },
+  // #21 Sensitive data in localStorage
+  {
+    name: "Секреты в localStorage",
+    regex: /localStorage\.setItem\s*\(\s*["'](?:token|session|auth|jwt|password|secret|api_key)/i,
+    severity: "HIGH",
+    description: "Хранение токенов/сессий в localStorage доступно через XSS. Атакующий читает document.cookie или localStorage напрямую.",
+    fix: "Для токенов использовать httpOnly cookies. localStorage — только для несекретных UI-данных.",
+  },
+  // #25 Webhook without signature verification
+  {
+    name: "Webhook без верификации подписи",
+    regex: /(?:router|app)\.post\s*\(\s*["'].*webhook/i,
+    severity: "HIGH",
+    description: "Webhook эндпоинт без проверки подписи принимает любые POST-запросы. Атакующий может имитировать события.",
+    fix: "Проверять подпись: stripe.webhooks.constructEvent(body, sig, secret).",
+  },
 ];
 
 export async function checkAuth(files: FileEntry[]): Promise<Finding[]> {
@@ -92,26 +124,27 @@ export async function checkAuth(files: FileEntry[]): Promise<Finding[]> {
     if (isTestFile(file.path)) continue;
 
     for (const pattern of PATTERNS) {
-      const match = pattern.regex.exec(file.content);
-      if (!match) continue;
+      const globalRegex = new RegExp(pattern.regex.source, pattern.regex.flags.includes("g") ? pattern.regex.flags : pattern.regex.flags + "g");
+      let match;
+      while ((match = globalRegex.exec(file.content)) !== null) {
+        // For cookie check — skip if httpOnly is already set
+        if (pattern.name === "Cookie без httpOnly") {
+          const cookieBlock = file.content.slice(match.index, match.index + 200);
+          if (/httpOnly\s*:\s*true/.test(cookieBlock)) continue;
+        }
 
-      // For cookie check — skip if httpOnly is already set
-      if (pattern.name === "Cookie без httpOnly") {
-        const cookieBlock = file.content.slice(match.index, match.index + 200);
-        if (/httpOnly\s*:\s*true/.test(cookieBlock)) continue;
+        findings.push({
+          id: makeId("auth"),
+          checker: "auth",
+          severity: pattern.severity,
+          title: pattern.name,
+          description: pattern.description,
+          fix: pattern.fix,
+          file: file.path,
+          line: lineNumber(file.content, match.index),
+          snippet: snippetAt(file.content, match.index),
+        });
       }
-
-      findings.push({
-        id: makeId("auth"),
-        checker: "auth",
-        severity: pattern.severity,
-        title: pattern.name,
-        description: pattern.description,
-        fix: pattern.fix,
-        file: file.path,
-        line: lineNumber(file.content, match.index),
-        snippet: snippetAt(file.content, match.index),
-      });
     }
   }
 

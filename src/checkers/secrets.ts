@@ -84,20 +84,21 @@ export async function checkSecrets(files: FileEntry[]): Promise<Finding[]> {
     if (isTestFile(file.path)) continue;
 
     for (const pattern of PATTERNS) {
-      const match = pattern.regex.exec(file.content);
-      if (!match) continue;
-
-      findings.push({
-        id: makeId("secrets"),
-        checker: "secrets",
-        severity: pattern.severity,
-        title: pattern.name,
-        description: `Найден ${pattern.name} в файле ${file.path}. Секреты в коде — это риск утечки при публикации репозитория.`,
-        fix: pattern.fix,
-        file: file.path,
-        line: lineNumber(file.content, match.index),
-        snippet: redactSecret(snippetAt(file.content, match.index)),
-      });
+      const globalRegex = new RegExp(pattern.regex.source, pattern.regex.flags.includes("g") ? pattern.regex.flags : pattern.regex.flags + "g");
+      let match;
+      while ((match = globalRegex.exec(file.content)) !== null) {
+        findings.push({
+          id: makeId("secrets"),
+          checker: "secrets",
+          severity: pattern.severity,
+          title: pattern.name,
+          description: `Найден ${pattern.name} в файле ${file.path}. Секреты в коде — это риск утечки при публикации репозитория.`,
+          fix: pattern.fix,
+          file: file.path,
+          line: lineNumber(file.content, match.index),
+          snippet: redactSecret(snippetAt(file.content, match.index)),
+        });
+      }
     }
   }
 
